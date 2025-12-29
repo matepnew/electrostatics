@@ -1,3 +1,6 @@
+// Create magnets array (global, like charges)
+const magnets = [];
+
 function electricFieldAt(x, y, charges, options = {}) {
     // options: {k:1, softening:0.1}
     const k = options.k ?? 1;
@@ -15,34 +18,56 @@ function electricFieldAt(x, y, charges, options = {}) {
     return {Ex, Ey};
 }
 
-function stepPhysics(charges, dt, options = {}) {
+function magneticFieldAt(x, y, magnet, options = {}) {
+    const soft = options.softening ?? 0.1;
+    const dx = x - magnet.x;
+    const dy = y - magnet.y;
+    const r2 = dx*dx + dy*dy + soft*soft;
+    const r = Math.sqrt(r2);
+    const mx = magnet.strength * Math.cos(magnet.angle);
+    const my = magnet.strength * Math.sin(magnet.angle);
+    const dot = mx * dx + my * dy;
+    const r5 = r2 * r2 * r;
+    const r3 = r2 * r;
+    const Bx = (3 * dot * dx / r5) - (mx / r3);
+    const By = (3 * dot * dy / r5) - (my / r3);
+    return {Bx, By};
+}
+
+function totalMagneticFieldAt(x, y, magnets, options = {}) {
+    let Bx = 0, By = 0;
+    for (const mag of magnets) {
+        const B = magneticFieldAt(x, y, mag, options);
+        Bx += B.Bx;
+        By += B.By;
+    }
+    return {Bx, By};
+}
+  
+function computeAccelerations(charges, magnets, options = {}) {
     const k = options.k ?? 1;
     const soft = options.softening ?? 0.1;
-    const damping = options.damping ?? 1.0; // e.g., 0.999
-    const maxAccel = options.maxAccel ?? 2000; // safety clamp to avoid explosions
-
-    // compute forces (naive O(N^2))
+    const maxAccel = options.maxAccel ?? 2000;
     const N = charges.length;
-    // zero accelerations
+
     for (let i = 0; i < N; i++) {
         charges[i].ax = 0;
         charges[i].ay = 0;
     }
+
     for (let i = 0; i < N; i++) {
         for (let j = i + 1; j < N; j++) {
             const a = charges[i], b = charges[j];
-            // Use vector r_a - r_b so sign of force (attract/repel) is correct:
             const dx = a.x - b.x;
             const dy = a.y - b.y;
             const r2 = dx*dx + dy*dy + soft*soft;
             const r = Math.sqrt(r2);
-            const invR3 = 1 / (r * r2); // 1 / r^3
+            const invR3 = 1 / (r * r2);
             const force = k * a.q * b.q * invR3;
-            // force vector on a due to b
             let fx = force * dx;
             let fy = force * dy;
 
-            // convert to accelerations and clamp magnitude for stability
+            // clamp accelerations
             let ax_inc = fx / a.m;
             let ay_inc = fy / a.m;
             let magA = Math.hypot(ax_inc, ay_inc);
@@ -52,7 +77,7 @@ function stepPhysics(charges, dt, options = {}) {
                 ay_inc *= s;
             }
 
-            let bx_inc = -fx / b.m; // equal and opposite on b
+            let bx_inc = -fx / b.m;
             let by_inc = -fy / b.m;
             let magB = Math.hypot(bx_inc, by_inc);
             if (magB > maxAccel) {
@@ -61,22 +86,121 @@ function stepPhysics(charges, dt, options = {}) {
                 by_inc *= s;
             }
 
-            // update accelerations: a += F/m
             a.ax += ax_inc;
             a.ay += ay_inc;
             b.ax += bx_inc;
             b.ay += by_inc;
         }
     }
-    // integrate
+ 
+    // Magnetic Lorentz force (now magnets is available)
+    for (let i = 0; i < N; i++) {
+        const c = charges[i];
+        const B = totalMagneticFieldAt(c.x, c.y, magnets, options);
+        const Bmag = Math.hypot(B.Bx, B.By);
+        const vmag = Math.hypot(c.vx, c.vy);
+        if (vmag > 0 && Bmag > 0) {
+            const perp_x = -c.vy;
+            const perp_y = c.vx;
+            const perp_mag = Math.hypot(perp_x, perp_y);
+            const fx = c.q * (perp_x / perp_mag) * Bmag * vmag;
+            const fy = c.q * (perp_y / perp_mag) * Bmag * vmag;
+            c.ax += fx / c.m;
+            c.ay += fy / c.m;
+        }
+    }
+}
+
+function stepPhysics(charges, magnets, dt, options = {}) {
+    const damping = options.damping ?? 1.0;
+    const N = charges.length;
+
+    computeAccelerations(charges, magnets, options);  // pass magnets here
+
+    // integrate (semi-implicit Euler)
     for (let p of charges) {
-        if (p.pinned) continue; // being dragged by user
+        if (p.pinned) continue;
         p.vx += p.ax * dt;
         p.vy += p.ay * dt;
         p.vx *= damping;
         p.vy *= damping;
         p.x += p.vx * dt;
         p.y += p.vy * dt;
+    }
+}
+
+// RK4 integrator (more accurate, conserves energy better)
+function stepPhysicsRK4(charges, magnets, dt, options = {}) {
+    const damping = options.damping ?? 1.0;
+    const N = charges.length;
+
+    // Save initial state
+    const state0 = charges.map(c => ({
+        x: c.x, y: c.y, vx: c.vx, vy: c.vy
+    }));
+
+    // k1: evaluate at t
+    computeAccelerations(charges, magnets, options);  // k1
+    const k1 = charges.map(c => ({
+        vx: c.ax, vy: c.ay, // dv/dt = a
+        x: c.vx, y: c.vy    // dx/dt = v
+    }));
+
+    // k2: evaluate at t + dt/2
+    for (let i = 0; i < N; i++) {
+        if (charges[i].pinned) continue;
+        charges[i].x = state0[i].x + 0.5 * dt * k1[i].x;
+        charges[i].y = state0[i].y + 0.5 * dt * k1[i].y;
+        charges[i].vx = state0[i].vx + 0.5 * dt * k1[i].vx;
+        charges[i].vy = state0[i].vy + 0.5 * dt * k1[i].vy;
+    }
+    computeAccelerations(charges, magnets, options);  // k2
+    const k2 = charges.map(c => ({
+        vx: c.ax, vy: c.ay,
+        x: c.vx, y: c.vy
+    }));
+
+    // k3: evaluate at t + dt/2 again (same time, different derivative)
+    for (let i = 0; i < N; i++) {
+        if (charges[i].pinned) continue;
+        charges[i].x = state0[i].x + 0.5 * dt * k2[i].x;
+        charges[i].y = state0[i].y + 0.5 * dt * k2[i].y;
+        charges[i].vx = state0[i].vx + 0.5 * dt * k2[i].vx;
+        charges[i].vy = state0[i].vy + 0.5 * dt * k2[i].vy;
+    }
+    computeAccelerations(charges, magnets, options);  // k3
+    const k3 = charges.map(c => ({
+        vx: c.ax, vy: c.ay,
+        x: c.vx, y: c.vy
+    }));
+
+    // k4: evaluate at t + dt
+    for (let i = 0; i < N; i++) {
+        if (charges[i].pinned) continue;
+        charges[i].x = state0[i].x + dt * k3[i].x;
+        charges[i].y = state0[i].y + dt * k3[i].y;
+        charges[i].vx = state0[i].vx + dt * k3[i].vx;
+        charges[i].vy = state0[i].vy + dt * k3[i].vy;
+    }
+    computeAccelerations(charges, magnets, options);  // k4
+    const k4 = charges.map(c => ({
+        vx: c.ax, vy: c.ay,
+        x: c.vx, y: c.vy
+    }));
+
+    // Combine: state = state0 + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+    for (let i = 0; i < N; i++) {
+        if (charges[i].pinned) continue;
+        const s = state0[i];
+        const dxdt = (k1[i].x + 2*k2[i].x + 2*k3[i].x + k4[i].x) / 6;
+        const dydt = (k1[i].y + 2*k2[i].y + 2*k3[i].y + k4[i].y) / 6;
+        const dvxdt = (k1[i].vx + 2*k2[i].vx + 2*k3[i].vx + k4[i].vx) / 6;
+        const dvydt = (k1[i].vy + 2*k2[i].vy + 2*k3[i].vy + k4[i].vy) / 6;
+
+        charges[i].x = s.x + dt * dxdt;
+        charges[i].y = s.y + dt * dydt;
+        charges[i].vx = (s.vx + dt * dvxdt) * damping;
+        charges[i].vy = (s.vy + dt * dvydt) * damping;
     }
 }
 
@@ -145,6 +269,41 @@ const Qinput = document.getElementById('Qinput');
 const Minput = document.getElementById('Minput');
 const addChargeBtn = document.getElementById('addChargeBtn');
 const delChargeBtn = document.getElementById('delChargeBtn');
+const eulerBtn = document.getElementById('eulerBtn');
+const rk4Btn = document.getElementById('rk4Btn');
+const integratorLabel = document.getElementById('integratorLabel');
+const addMagnetBtn = document.getElementById('addMagnetBtn');
+const delMagnetBtn = document.getElementById('delMagnetBtn');
+const magStrengthInput = document.getElementById('magStrengthInput');
+
+addMagnetBtn.addEventListener('click', () => {
+    const strength = parseFloat(magStrengthInput.value)*1000 || 10;
+    magnets.push({
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        angle: 0,
+        strength: strength,
+        pinned: false
+    });    
+});
+
+delMagnetBtn.addEventListener('click', () => {
+    if (magnets.length > 0) {
+        magnets.pop();
+    }
+});
+
+let useRK4 = false; // starts with Euler
+
+eulerBtn.addEventListener('click', () => {
+    useRK4 = false;
+    integratorLabel.textContent = 'Euler';
+});
+
+rk4Btn.addEventListener('click', () => {
+    useRK4 = true;
+    integratorLabel.textContent = 'RK4';
+});
 
 addChargeBtn.addEventListener('click', () => {
     const q = parseFloat(Qinput.value) || 1;
@@ -165,7 +324,7 @@ delChargeBtn.addEventListener('click', () => {
 });
 
 // draw function: optional field arrows + charges
-function draw(charges, options = {}) {
+function draw(charges, magnets, options = {}) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     // background
     ctx.fillStyle = '#101010';
@@ -205,6 +364,36 @@ function draw(charges, options = {}) {
         ctx.font = '12px sans-serif';
         ctx.fillText((c.q>0?'+':'')+c.q.toString(), c.x + r + 4, c.y + 4);
     }
+
+    // magnets with colored poles
+    for (const m of magnets) {
+        const w = 40, h = 20;
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.rotate(m.angle);
+        
+        // North pole (left, red)
+        ctx.fillStyle = '#ff6666';
+        ctx.fillRect(-w/2, -h/2, w/2, h);
+        
+        // South pole (right, blue)
+        ctx.fillStyle = '#6666ff';
+        ctx.fillRect(0, -h/2, w/2, h);
+        
+        // outline
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-w/2, -h/2, w, h);
+        
+        // labels
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('N', -w/4, 4);
+        ctx.fillText('S', w/4, 4);
+        
+        ctx.restore();
+    }
 }
 
 // small helper that draws an arrow from (x1,y1) to (x2,y2)
@@ -228,8 +417,11 @@ function drawArrow(ctx, x1, y1, x2, y2) {
 
 // simple dragging logic
 let dragging = null;
+let draggingType = null;
+
 canvas.addEventListener('mousedown', (e) => {
     const pos = getMousePos(e);
+
     // pick nearest charge within radius
     let best = null, bestDist = Infinity;
     for (const c of charges) {
@@ -237,6 +429,13 @@ canvas.addEventListener('mousedown', (e) => {
         const d2 = (c.x - pos.x)**2 + (c.y - pos.y)**2;
         if (d2 < (r + 6)**2 && d2 < bestDist) { best = c; bestDist = d2; }
     }
+
+    for (const m of magnets) {
+        const w = 40, h = 20;
+        const d2 = (m.x - pos.x)**2 + (m.y - pos.y)**2;
+        if (d2 < (Math.max(w,h)/2 + 6)**2 && d2 < bestDist) { best = m; bestDist = d2; draggingType = 'magnet'; } 
+    }
+
     if (best) {
         dragging = best;
         dragging.pinned = true;
@@ -246,14 +445,25 @@ canvas.addEventListener('mousedown', (e) => {
         // charges.push({x:pos.x, y:pos.y, vx:0, vy:0, q:1, m:1, pinned:false});
     }
 });
+
 canvas.addEventListener('mousemove', (e) => {
     if (!dragging) return;
     const pos = getMousePos(e);
     dragging.x = pos.x;
     dragging.y = pos.y;
 });
-canvas.addEventListener('mouseup', () => { if (dragging) dragging.pinned = false; dragging = null; });
-canvas.addEventListener('mouseleave', () => { if (dragging) dragging.pinned = false; dragging = null; });
+
+canvas.addEventListener('mouseup', () => { 
+    if (dragging) dragging.pinned = false; 
+    dragging = null;
+    draggingType = null;
+});
+
+canvas.addEventListener('mouseleave', () => { 
+    if (dragging) dragging.pinned = false; 
+    dragging = null;
+    draggingType = null;
+});
 
 // animation loop using your stepPhysics
 let last = performance.now();
@@ -262,10 +472,16 @@ const simOptions = {k: 10000, softening:0.4, damping:0.999, maxAccel:2000};
 const drawOptions = {drawField:true, gridSpacing:28, fieldScale:18, k:1, softening:0.4};
 
 function loop(now) {
-    const dt = Math.min(0.03, (now - last) / 1000); // clamp dt for stability
+    const dt = Math.min(0.03, (now - last) / 1000);
     last = now;
-    stepPhysics(charges, dt, simOptions); // uses your function
-    draw(charges, drawOptions);
+    
+    if (useRK4) {
+        stepPhysicsRK4(charges, magnets, dt, simOptions);  // add magnets
+    } else {
+        stepPhysics(charges, magnets, dt, simOptions);  // add magnets
+    }
+    
+    draw(charges, magnets, drawOptions);  // add magnets
     requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
