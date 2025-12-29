@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Electrostatics Sim</title>
+  <style>
+    body { margin: 0; background: #111; color: #fff; font-family: sans-serif; }
+    #controls { padding: 8px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <strong>Electrostatics demo</strong> — drag charges on the canvas.
+    <br/> 
+    Charge <input id="Qinput" type="number" value="1" step="0.1" style="width: 60px;" />
+    Mass <input id="Minput" type="number" value="1" step="0.1" style="width: 60px;" />
+    <button id="addChargeBtn">Add Charge</button>
+    <button id="delChargeBtn">Delete Charge</button>
+  </div>
+
+  <!-- provide an initial charges array so electro.js can use it immediately -->
+  <script>
+    const charges = [
+      { x: 300, y: 300, vx: 0, vy: 0, q:  2, m: 1, pinned: false },
+      { x: 500, y: 300, vx: 0, vy: 0, q: 2, m: 1, pinned: false },
+      { x: 400, y: 400, vx: 0, vy: 0, q: -2, m: 1, pinned: false },
+      { x: 400, y: 200, vx: 0, vy: 0, q: -2, m: 1, pinned: false }
+
+    ];
+  </script>
+
+  <!-- load your simulation after charges is defined -->
+  <script src="electro.js"></script>
+</body>
+</html>
