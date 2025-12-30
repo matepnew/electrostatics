@@ -275,6 +275,33 @@ const integratorLabel = document.getElementById('integratorLabel');
 const addMagnetBtn = document.getElementById('addMagnetBtn');
 const delMagnetBtn = document.getElementById('delMagnetBtn');
 const magStrengthInput = document.getElementById('magStrengthInput');
+const resetBtn = document.getElementById('resetBtn');
+
+function getInitialState() {
+    return {
+        charges: [
+            {x: 300, y: 300, vx: 0, vy: 0, q: 2, m: 1, pinned: false},
+            {x: 500, y: 300, vx: 0, vy: 0, q: 2, m: 1, pinned: false},
+            {x: 400, y: 400, vx: 0, vy: 0, q: -2, m: 1, pinned: false},
+            {x: 400, y: 200, vx: 0, vy: 0, q: -2, m: 1, pinned: false}
+        ],
+        magnets: []
+    }
+}
+
+const initialState = getInitialState();
+
+resetBtn.addEventListener('click', () => {
+    charges.length = 0;
+    for (const c of initialState.charges) {
+        charges.push({...c});
+    }
+
+    magnets.length = 0;
+    for (const m of initialState.magnets) {
+        magnets.push({...m});
+    }
+});
 
 addMagnetBtn.addEventListener('click', () => {
     const strength = parseFloat(magStrengthInput.value)*1000 || 10;
@@ -297,12 +324,14 @@ let useRK4 = false; // starts with Euler
 
 eulerBtn.addEventListener('click', () => {
     useRK4 = false;
-    integratorLabel.textContent = 'Euler';
+    eulerBtn.classList.add('active');
+    rk4Btn.classList.remove('active');
 });
 
 rk4Btn.addEventListener('click', () => {
     useRK4 = true;
-    integratorLabel.textContent = 'RK4';
+    rk4Btn.classList.add('active');
+    eulerBtn.classList.remove('active');
 });
 
 addChargeBtn.addEventListener('click', () => {

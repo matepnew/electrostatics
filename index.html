@@ -2,29 +2,76 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Electrostatics Sim</title>
+  <title>Electrostatics Simulation</title>
   <style>
-    body { margin: 0; background: #111; color: #fff; font-family: sans-serif; }
-    #controls { padding: 8px; text-align: center; }
+    body { margin: 0; background: #111; color: #F4F3EE; font-family: monospace; }
+    #controls { 
+      padding: 8px; 
+      margin: 0 0 2px 0;
+      text-align: center;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #111;
+      border-top: 1px solid #333;
+    }
+    button {
+      margin: 0 4px;
+      padding: 4px 8px;
+      font-size: 14px;
+      background-color: #F4F3EE;
+      border-radius: 4px;
+      border-style: none;
+      font-family: monospace;
+    }
+    button:hover {
+      background-color: #419D78;
+      cursor: pointer;
+      color: #F4F3EE;
+    }
+    button.active {
+        background-color: #419D78;
+        color: #F4F3EE;
+    }
+    #sim-title {
+      margin: 8px 4px 4px 8px;
+      font-weight: 600;
+      color: #F4F3EE;
+      text-align: center;
+    }
+    #credits {
+        text-align: center;
+        margin-bottom: 16px;
+    }
+    canvas {
+       border: 1px solid #333;
+       border-radius: 4px;
+    }
   </style>
 </head>
 <body>
+    <h1 id="sim-title">Electrostatics Simulation</h1>
   <div id="controls">
-    <strong>Electrostatics demo</strong> — drag charges on the canvas.
+    use your mouse to drag charges and magnets around
+    <br>
     <br/> 
-    Charge <input id="Qinput" type="number" value="1" step="0.1" style="width: 60px;" />
-    Mass <input id="Minput" type="number" value="1" step="0.1" style="width: 60px;" />
+    <button id="eulerBtn">Euler Method</button>
+    <button id="rk4Btn">RK4</button>
+    <button id="resetBtn">Reset</button>
+    Charge: <input id="Qinput" type="number" value="1" step="0.1" style="width: 60px;" />
+    Mass: <input id="Minput" type="number" value="1" step="0.1" style="width: 60px;" />
     <button id="addChargeBtn">Add Charge</button>
     <button id="delChargeBtn">Delete Charge</button>
-    <button id="eulerBtn">Euler</button>
-    <button id="rk4Btn">RK4</button>
-    <span id="integratorLabel" style="margin-left: 12px; font-weight: bold;">Euler</span>
     <button id="addMagnetBtn">Add Magnet</button>
     <button id="delMagnetBtn">Delete Magnet</button>
-    Magnet Strength <input id="magStrengthInput" type="number" step="1" value="10" style="width: 60px;" />
+    Magnet Moment: <input id="magStrengthInput" type="number" step="1" value="10" style="width: 60px;" />
+  </div>
+  <div id="credits">
+    <a href="https://github.com/matepnew" style="font-size:12px; color:#419D78; margin-left: 8px; margin-bottom: 8px; ">made by matepnew</a>
   </div>
 
-  <!-- provide an initial charges array so electro.js can use it immediately -->
+  <!-- initial charges -->
   <script>
     const charges = [
       { x: 300, y: 300, vx: 0, vy: 0, q:  2, m: 1, pinned: false },
@@ -33,9 +80,9 @@
       { x: 400, y: 200, vx: 0, vy: 0, q: -2, m: 1, pinned: false }
 
     ];
+    eulerBtn.classList.add('active');
   </script>
 
-  <!-- load your simulation after charges is defined -->
   <script src="electro.js"></script>
 </body>
 </html>
